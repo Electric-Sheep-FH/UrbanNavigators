@@ -24,8 +24,13 @@ Deux éléments nouveaux remettent cette décision en cause :
   sur l'inventaire des services.
 - **Poste local** : Docker Compose reste l'outil du quotidien ; un cluster **k3d** (k3s dans Docker,
   Traefik intégré) permet de tester les manifestes à l'identique.
-- **Staging / production** : cluster Kubernetes managé. Le même chart est utilisé avec un fichier de
-  valeurs par environnement ; seule la version d'image (SHA du commit) change entre staging et production.
+- **Staging** : cluster **k3s dans une VM du NAS de l'équipe** (Synology DS423+, 8 Go alloués).
+  - La CI y déploie via un runner GitHub auto-hébergé dans la même VM : l'API Kubernetes n'est jamais
+    exposée sur Internet.
+  - Le site est publié en HTTPS par Tailscale Funnel.
+  - Coût nul ; procédure dans [deploiement-staging-nas.md](../deploiement-staging-nas.md).
+- **Production** : cluster Kubernetes managé. Le même chart est utilisé avec un fichier de valeurs par
+  environnement ; seule la version d'image (SHA du commit) change entre staging et production.
 - **Dépendances d'infrastructure** : manifestes simples (`infra/`) pour le local et le staging d'école ;
   en production, services managés ou opérateurs (CloudNativePG, RabbitMQ Cluster Operator).
 

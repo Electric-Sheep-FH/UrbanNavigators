@@ -1,8 +1,10 @@
-# Staging : proche de la production, une réplique par service pour limiter le coût.
+# Staging : cluster k3s dans une VM du NAS, une réplique par service.
 # image.registry, image.tag et ingress.host sont fournis par la CI.
 imagePullSecrets:
   - name: ghcr
 
 ingress:
+  # Le HTTPS est assuré par le tunnel (Tailscale Funnel) devant le cluster :
+  # l'Ingress reçoit du HTTP sur le réseau interne de la VM.
   tls:
-    enabled: true
+    enabled: false

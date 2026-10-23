@@ -120,16 +120,37 @@ Correspondance avec le pipeline obligatoire du CDC (§15.2) :
 | Charge / résilience, approbation de recette | — / environnement `production` | à ajouter / ✅ |
 | Promotion du même artefact, rollback | `release.yml`, `--rollback-on-failure` | ✅ |
 
-### Configuration GitHub à faire une fois
+### Configuration à faire une fois
 
-| Élément | Où | Valeur |
+Le staging tourne sur le NAS de l'équipe : procédure complète (VM, k3s, runner, tunnel HTTPS) dans
+[docs/deploiement-staging-nas.md](docs/deploiement-staging-nas.md). Tant que ce n'est pas fait, laisser
+`STAGING_ENABLED` à `false` : le reste de la CI fonctionne normalement.
+
+**1. GitHub Actions** : variables et secrets lus par les workflows (`vars.X`, `secrets.X`).
+Ce ne sont pas des variables d'environnement du système ni des pods.
+
+| Nom | Type | Niveau | Où dans GitHub | Valeur |
+|---|---|---|---|---|
+| `STAGING_ENABLED` | variable | **dépôt** | Settings → Secrets and variables → Actions → *Variables* | `true` quand le cluster de staging existe |
+| `STAGING_HOST` | variable | environnement `staging` | Settings → Environments → staging → *Environment variables* | adresse Tailscale Funnel, ex. `vm.tailnet.ts.net` |
+| `STAGING_KUBECONFIG` | secret | environnement `staging` | Settings → Environments → staging → *Environment secrets* | `sudo base64 -w0 /etc/rancher/k3s/k3s.yaml` dans la VM |
+| `PRODUCTION_HOST` | variable | environnement `production` | Settings → Environments → production → *Environment variables* | nom de domaine de production |
+| `PRODUCTION_KUBECONFIG` | secret | environnement `production` | Settings → Environments → production → *Environment secrets* | kubeconfig encodé en base64 |
+
+- `STAGING_ENABLED` **doit** être au niveau du dépôt. Il est lu dans le `if:` du job `deploy-staging`,
+  qui est évalué avant que le job n'entre dans son environnement : une variable d'environnement GitHub
+  y serait invisible, et le déploiement ne se déclencherait jamais.
+- Les noms de domaine et kubeconfigs vont dans leur environnement : un secret de production n'est ainsi
+  lisible que par un job qui a passé les règles de protection de l'environnement `production`.
+- Sur l'environnement `production`, activer *Required reviewers* : c'est l'approbation de recette
+  avant la mise en production.
+
+**2. Cluster Kubernetes** (staging et production) : des objets `Secret` Kubernetes, pas GitHub.
+
+| Nom | Création | Rôle |
 |---|---|---|
-| `STAGING_ENABLED` | Settings → Variables | `true` quand le cluster de staging existe |
-| `STAGING_HOST`, `PRODUCTION_HOST` | Settings → Variables | noms de domaine |
-| `STAGING_KUBECONFIG`, `PRODUCTION_KUBECONFIG` | Settings → Secrets | kubeconfig encodé en base64 |
-| Environnement `production` | Settings → Environments | « Required reviewers » = approbation de recette |
-| Secret `ghcr` dans le cluster | `kubectl create secret docker-registry ghcr ...` | lecture des images privées |
-| Secrets `<service>-secrets` | dans le cluster | `DATABASE_URL`, `AMQP_URL`… (voir `infra/k8s/dev-secrets.yaml`) |
+| `ghcr` | `kubectl -n urbannavigators create secret docker-registry ghcr --docker-server=ghcr.io --docker-username=<compte> --docker-password=<jeton read:packages>` | télécharger les images privées de GHCR |
+| `<service>-secrets` | un par service (modèle : `infra/k8s/dev-secrets.yaml`) | `DATABASE_URL`, `AMQP_URL`… injectés dans les pods |
 
 ## Ajouter un service
 
