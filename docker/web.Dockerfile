@@ -1,7 +1,7 @@
 # Front React : build statique servi par nginx (non root).
 #   docker build -f docker/web.Dockerfile -t un-web .
 
-FROM node:22-alpine AS build
+FROM node:25-alpine AS build
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 RUN corepack enable
 WORKDIR /repo

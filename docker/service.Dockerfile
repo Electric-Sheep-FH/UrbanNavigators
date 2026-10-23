@@ -1,7 +1,7 @@
 # Image commune à tous les services NestJS du monorepo.
 #   docker build -f docker/service.Dockerfile --build-arg SERVICE=identity -t un-identity .
 
-FROM node:22-alpine AS build
+FROM node:25-alpine AS build
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 RUN corepack enable
 WORKDIR /repo
@@ -19,7 +19,7 @@ RUN pnpm --filter "@un/${SERVICE}..." build
 # Copie autonome du service et de ses seules dépendances de production, aux versions du lockfile.
 RUN pnpm --filter "@un/${SERVICE}" deploy --prod --offline /out
 
-FROM node:22-alpine
+FROM node:25-alpine
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=build /out ./
