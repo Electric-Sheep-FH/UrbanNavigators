@@ -21,6 +21,10 @@ RUN pnpm --filter "@un/${SERVICE}" deploy --prod --offline /out
 
 FROM node:22-alpine
 ENV NODE_ENV=production
+# Les gestionnaires de paquets ne servent pas à l'exécution : on les retire pour réduire la surface
+# d'attaque (leurs dépendances internes concentrent les vulnérabilités signalées par Trivy).
+RUN rm -rf /usr/local/lib/node_modules /opt/yarn-* \
+      /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg
 WORKDIR /app
 COPY --from=build /out ./
 # UID numérique : Kubernetes peut ainsi vérifier runAsNonRoot.

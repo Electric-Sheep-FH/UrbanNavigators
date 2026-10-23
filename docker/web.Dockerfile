@@ -13,7 +13,8 @@ COPY . .
 RUN pnpm install --offline --frozen-lockfile --filter "@un/web..."
 RUN pnpm --filter "@un/web..." build
 
-FROM nginxinc/nginx-unprivileged:1.27-alpine
+# Branche stable de nginx (numéro pair), maintenue avec les correctifs de sécurité.
+FROM nginxinc/nginx-unprivileged:1.30-alpine
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /repo/apps/web/dist /usr/share/nginx/html
 EXPOSE 8080
