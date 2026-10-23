@@ -1,0 +1,225 @@
+# Pipeline unique pour tout le monorepo (CDC §15.2).
+#   - Pull request : qualité + sécurité + build et scan des images des services impactés.
+#   - Push sur main : idem, puis publication des images (tag = SHA du commit) et déploiement en staging.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  changes:
+    name: Services impactés
+    runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.affected.outputs.services }}
+      unchanged: ${{ steps.affected.outputs.unchanged }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: affected
+        run: node scripts/affected-services.mjs "$BASE"
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
+
+  quality:
+    # Le monorepo reste petit : lint, tests et build complets à chaque exécution (< 2 min).
+    name: Lint, tests, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm lint
+      - run: pnpm test
+
+  security:
+    name: Sécurité du code
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Scan de secrets (Gitleaks)
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Dépendances vulnérables et licences (Trivy)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,license
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+  helm:
+    name: Manifestes Kubernetes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/setup-helm@v5
+      - name: Installation de kubeconform
+        run: |
+          curl -fsSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz
+          sudo mv kubeconform /usr/local/bin/
+      - name: Lint et validation du chart pour chaque environnement
+        run: |
+          chart=deploy/helm/urbannavigators
+          for env in local staging production; do
+            echo "::group::$env"
+            helm lint "$chart" -f "$chart/values-$env.yaml"
+            helm template un "$chart" -f "$chart/values-$env.yaml" | kubeconform -strict -summary
+            echo "::endgroup::"
+          done
+      - name: Validation de l'infrastructure (Kustomize)
+        run: kubectl kustomize infra | kubeconform -strict -summary
+
+  images:
+    name: Image ${{ matrix.service }}
+    needs: [changes, quality, security]
+    if: needs.changes.outputs.services != '[]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write # signature cosign "keyless" via l'identité OIDC du workflow
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJSON(needs.changes.outputs.services) }}
+    env:
+      PUBLISH: ${{ github.event_name == 'push' }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Nom de l'image
+        run: echo "IMAGE=ghcr.io/${OWNER,,}/un-${{ matrix.service }}" >> "$GITHUB_ENV"
+        env:
+          OWNER: ${{ github.repository_owner }}
+      - uses: docker/setup-buildx-action@v4
+      - name: Build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ${{ matrix.service == 'web' && 'docker/web.Dockerfile' || 'docker/service.Dockerfile' }}
+          build-args: SERVICE=${{ matrix.service }}
+          load: true
+          tags: ${{ env.IMAGE }}:${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+      - name: Scan de l'image (Trivy)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}:${{ github.sha }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: SBOM (Syft)
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.IMAGE }}:${{ github.sha }}
+          format: spdx-json
+          artifact-name: sbom-${{ matrix.service }}.spdx.json
+      - name: Connexion à GHCR
+        if: env.PUBLISH == 'true'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publication (tags SHA et main)
+        if: env.PUBLISH == 'true'
+        run: |
+          docker tag "$IMAGE:$GITHUB_SHA" "$IMAGE:main"
+          docker push "$IMAGE:$GITHUB_SHA"
+          docker push "$IMAGE:main"
+          echo "DIGEST_REF=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE:$GITHUB_SHA")" >> "$GITHUB_ENV"
+      - uses: sigstore/cosign-installer@v4
+        if: env.PUBLISH == 'true'
+      - name: Signature de l'image (cosign)
+        if: env.PUBLISH == 'true'
+        run: cosign sign --yes "$DIGEST_REF"
+
+  retag:
+    # Services non modifiés : l'image déjà publiée reçoit le SHA du commit, sans reconstruction.
+    # Chaque commit de main dispose ainsi d'un jeu d'images complet et déployable.
+    name: Re-tag ${{ matrix.service }}
+    needs: [changes, quality, security]
+    if: github.event_name == 'push' && needs.changes.outputs.unchanged != '[]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        service: ${{ fromJSON(needs.changes.outputs.unchanged) }}
+    steps:
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@v4
+      - run: |
+          image="ghcr.io/${OWNER,,}/un-${{ matrix.service }}"
+          docker buildx imagetools create -t "$image:$GITHUB_SHA" "$image:main"
+        env:
+          OWNER: ${{ github.repository_owner }}
+
+  deploy-staging:
+    name: Déploiement staging
+    needs: [quality, security, helm, images, retag]
+    # Activé quand la variable de dépôt STAGING_ENABLED vaut "true" (cluster et secrets configurés).
+    if: >-
+      always()
+      && github.event_name == 'push'
+      && vars.STAGING_ENABLED == 'true'
+      && !contains(needs.*.result, 'failure')
+      && !contains(needs.*.result, 'cancelled')
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: https://${{ vars.STAGING_HOST }}
+    concurrency: deploy-staging
+    steps:
+      - uses: actions/checkout@v7
+      - uses: azure/setup-helm@v5
+      - name: Accès au cluster
+        run: |
+          mkdir -p ~/.kube
+          echo "$KUBECONFIG_B64" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+        env:
+          KUBECONFIG_B64: ${{ secrets.STAGING_KUBECONFIG }}
+      - name: helm upgrade (rollback automatique en cas d'échec)
+        run: |
+          helm upgrade --install un deploy/helm/urbannavigators \
+            --namespace urbannavigators --create-namespace \
+            -f deploy/helm/urbannavigators/values-staging.yaml \
+            --set image.registry="ghcr.io/${OWNER,,}" \
+            --set image.tag="$GITHUB_SHA" \
+            --set ingress.host="$STAGING_HOST" \
+            --wait --timeout 5m --rollback-on-failure
+        env:
+          OWNER: ${{ github.repository_owner }}
+          STAGING_HOST: ${{ vars.STAGING_HOST }}
+      - name: Smoke tests
+        run: helm test un --namespace urbannavigators --logs

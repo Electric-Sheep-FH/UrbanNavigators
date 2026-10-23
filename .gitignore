@@ -1,0 +1,13 @@
+node_modules/
+dist/
+coverage/
+*.log
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+
+# Données OpenTripPlanner (volumineuses, à récupérer localement)
+infra/otp/*.zip
+infra/otp/*.pbf
+infra/otp/*.obj

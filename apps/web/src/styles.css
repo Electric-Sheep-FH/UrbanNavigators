@@ -1,0 +1,52 @@
+:root {
+  font-family: system-ui, sans-serif;
+  line-height: 1.5;
+  color: #1a1a1a;
+  background: #ffffff;
+}
+
+main {
+  max-width: 40rem;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+
+button {
+  font: inherit;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+}
+
+button:focus-visible {
+  outline: 3px solid #0050b3;
+  outline-offset: 2px;
+}
+
+table {
+  width: 100%;
+  margin-top: 1.5rem;
+  border-collapse: collapse;
+}
+
+caption {
+  text-align: left;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.5rem;
+  border-bottom: 1px solid #d0d0d0;
+}
+
+/* Contrastes AA : l'état est aussi donné par le texte, pas seulement par la couleur (RGAA). */
+td[data-status='up'] {
+  color: #1b6e2a;
+}
+
+td[data-status='down'] {
+  color: #b00020;
+  font-weight: 600;
+}

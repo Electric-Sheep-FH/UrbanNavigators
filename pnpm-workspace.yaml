@@ -1,0 +1,17 @@
+packages:
+  - "apps/*"
+  - "libs/*"
+
+# Les libs du workspace sont copiées (et non liées) chez les services qui les utilisent :
+# "pnpm deploy" peut alors produire l'image à partir du lockfile, avec les versions exactes testées en CI.
+injectWorkspacePackages: true
+# Après chaque "build" d'une lib, sa copie est resynchronisée chez les services qui en dépendent.
+syncInjectedDepsAfterScripts:
+  - build
+
+# Seules ces dépendances ont le droit d'exécuter un script d'installation (pnpm 10).
+onlyBuiltDependencies:
+  - esbuild
+# Scripts inutiles chez nous (simple vérification de version) : ignorés sans avertissement.
+ignoredBuiltDependencies:
+  - protobufjs

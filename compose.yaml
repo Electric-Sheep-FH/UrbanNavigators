@@ -1,0 +1,150 @@
+# Environnement de développement complet : docker compose up --build
+# Identifiants de DÉVELOPPEMENT uniquement.
+
+name: urbannavigators
+
+x-service: &service
+  restart: unless-stopped
+  build: &build
+    context: .
+    dockerfile: docker/service.Dockerfile
+
+x-env: &env
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://observability:4318
+
+services:
+  # --- Infrastructure -------------------------------------------------------
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: urban
+      POSTGRES_PASSWORD: urban
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "urban"]
+      interval: 5s
+      retries: 10
+
+  redis:
+    image: redis:7.4-alpine
+    # Données éphémères uniquement (ADR-006) : pas de persistance disque.
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports: ["6379:6379"]
+
+  rabbitmq:
+    image: rabbitmq:4.1-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: urban
+      RABBITMQ_DEFAULT_PASS: urban
+    ports: ["5672:5672", "15672:15672"]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      retries: 10
+
+  # Grafana + Tempo + Prometheus + Loki avec un récepteur OTLP : http://localhost:3001
+  observability:
+    image: grafana/otel-lgtm:0.11.0
+    ports: ["3001:3000", "4317:4317", "4318:4318"]
+
+  # Nécessite un GTFS (.zip) et un extrait OpenStreetMap (.osm.pbf) dans infra/otp/.
+  # Démarrage : docker compose --profile otp up opentripplanner
+  opentripplanner:
+    image: opentripplanner/opentripplanner:2.7.0
+    profiles: ["otp"]
+    command: ["--build", "--serve"]
+    volumes:
+      - ./infra/otp:/var/opentripplanner
+    ports: ["8090:8080"]
+
+  # --- Services applicatifs -------------------------------------------------
+
+  gateway-bff:
+    <<: *service
+    build: { <<: *build, args: { SERVICE: gateway-bff } }
+    environment: { <<: *env, OTEL_SERVICE_NAME: gateway-bff }
+    ports: ["3000:3000"]
+    depends_on: [identity, mobility-data, realtime, journey-planner, disruptions, notifications]
+
+  identity:
+    <<: *service
+    build: { <<: *build, args: { SERVICE: identity } }
+    environment:
+      <<: *env
+      OTEL_SERVICE_NAME: identity
+      DATABASE_URL: postgres://identity:identity@postgres:5432/identity
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  mobility-data:
+    <<: *service
+    build: { <<: *build, args: { SERVICE: mobility-data } }
+    environment:
+      <<: *env
+      OTEL_SERVICE_NAME: mobility-data
+      DATABASE_URL: postgres://mobility:mobility@postgres:5432/mobility
+      AMQP_URL: amqp://urban:urban@rabbitmq:5672
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  realtime:
+    <<: *service
+    build: { <<: *build, args: { SERVICE: realtime } }
+    environment:
+      <<: *env
+      OTEL_SERVICE_NAME: realtime
+      REDIS_URL: redis://redis:6379
+      AMQP_URL: amqp://urban:urban@rabbitmq:5672
+    depends_on:
+      redis: { condition: service_started }
+      rabbitmq: { condition: service_healthy }
+
+  journey-planner:
+    <<: *service
+    build: { <<: *build, args: { SERVICE: journey-planner } }
+    environment:
+      <<: *env
+      OTEL_SERVICE_NAME: journey-planner
+      REDIS_URL: redis://redis:6379
+      OTP_URL: http://opentripplanner:8080
+    depends_on: [redis]
+
+  disruptions:
+    <<: *service
+    build: { <<: *build, args: { SERVICE: disruptions } }
+    environment:
+      <<: *env
+      OTEL_SERVICE_NAME: disruptions
+      DATABASE_URL: postgres://operations:operations@postgres:5432/operations
+      AMQP_URL: amqp://urban:urban@rabbitmq:5672
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  notifications:
+    <<: *service
+    build: { <<: *build, args: { SERVICE: notifications } }
+    environment:
+      <<: *env
+      OTEL_SERVICE_NAME: notifications
+      DATABASE_URL: postgres://notifications:notifications@postgres:5432/notifications
+      AMQP_URL: amqp://urban:urban@rabbitmq:5672
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+
+  web:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+    ports: ["8080:8080"]
+    depends_on: [gateway-bff]
+
+volumes:
+  pgdata:

@@ -1,0 +1,8 @@
+# Staging : proche de la production, une réplique par service pour limiter le coût.
+# image.registry, image.tag et ingress.host sont fournis par la CI.
+imagePullSecrets:
+  - name: ghcr
+
+ingress:
+  tls:
+    enabled: true

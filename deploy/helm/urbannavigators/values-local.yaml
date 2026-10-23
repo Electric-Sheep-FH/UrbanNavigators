@@ -1,0 +1,8 @@
+# Cluster local k3d : images construites par scripts/build-images.sh puis importées dans le cluster.
+image:
+  registry: un-local
+  tag: dev
+  pullPolicy: IfNotPresent
+
+ingress:
+  host: urbannavigators.localhost

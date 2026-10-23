@@ -1,0 +1,11 @@
+# Règles Gitleaks par défaut, sauf pour les identifiants de développement local, volontairement publics.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Identifiants de développement (Docker Compose et cluster local)"
+paths = [
+  '''compose\.yaml''',
+  '''infra/k8s/dev-secrets\.yaml''',
+  '''infra/postgres/init\.sql''',
+]

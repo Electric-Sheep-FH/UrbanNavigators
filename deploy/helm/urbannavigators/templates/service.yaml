@@ -1,0 +1,20 @@
+{{- range $name, $svc := .Values.services }}
+{{- $cfg := include "un.config" (dict "ctx" $ "svc" $svc) | fromYaml }}
+{{- $ctx := dict "ctx" $ "name" $name }}
+---
+# Le Service porte le nom du microservice : http://<service>:<port> fonctionne comme sous Docker Compose.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "un.labels" $ctx | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "un.selectorLabels" $ctx | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ $cfg.port }}
+      targetPort: http
+{{- end }}

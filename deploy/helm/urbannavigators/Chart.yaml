@@ -1,0 +1,6 @@
+apiVersion: v2
+name: urbannavigators
+description: Services applicatifs de la plateforme Urban Navigators (un Deployment + un Service par microservice).
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

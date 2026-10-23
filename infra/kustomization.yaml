@@ -1,0 +1,24 @@
+# Dépendances d'infrastructure pour le cluster LOCAL (et un staging d'école).
+#   kubectl apply -k infra
+# En production : PostgreSQL managé (ou opérateur CloudNativePG), RabbitMQ Cluster Operator,
+# collecteur OpenTelemetry dédié, et secrets fournis par un gestionnaire de secrets.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: urbannavigators
+
+resources:
+  - k8s/namespace.yaml
+  - k8s/dev-secrets.yaml
+  - k8s/postgres.yaml
+  - k8s/redis.yaml
+  - k8s/rabbitmq.yaml
+  - k8s/observability.yaml
+
+configMapGenerator:
+  - name: postgres-init
+    files:
+      - postgres/init.sql
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: urbannavigators-infra

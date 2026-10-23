@@ -1,0 +1,74 @@
+# Valeurs par défaut. Chaque environnement les surcharge : values-local / values-staging / values-production.
+
+image:
+  # La CI remplace ces deux valeurs : ghcr.io/<owner> et le SHA du commit.
+  registry: ghcr.io/changeme
+  prefix: un-
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# Images privées sur GHCR : créer un secret docker-registry et le référencer ici.
+imagePullSecrets: []
+
+ingress:
+  enabled: true
+  className: traefik
+  host: urbannavigators.localhost
+  annotations: {}
+  tls:
+    enabled: false
+    secretName: urbannavigators-tls
+
+# Variables injectées dans tous les services. Les secrets (DATABASE_URL, AMQP_URL...)
+# viennent du Secret "<service>-secrets", monté automatiquement s'il existe.
+env:
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://observability:4318
+
+# Réglages communs, surchargeables service par service.
+defaults:
+  replicas: 1
+  port: 3000
+  ingressPath: ""
+  probes:
+    liveness: /health/live
+    readiness: /health/ready
+  resources:
+    requests:
+      cpu: 50m
+      memory: 96Mi
+    limits:
+      memory: 256Mi
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+  env: {}
+
+# Inventaire des capacités déployables (ARC-004 : sept services métier au maximum).
+services:
+  gateway-bff:
+    ingressPath: /api
+  identity: {}
+  mobility-data: {}
+  realtime:
+    env:
+      REDIS_URL: redis://redis:6379
+  journey-planner:
+    env:
+      REDIS_URL: redis://redis:6379
+      OTP_URL: http://opentripplanner:8080
+  disruptions: {}
+  notifications: {}
+  web:
+    port: 8080
+    ingressPath: /
+    probes:
+      liveness: /
+      readiness: /
+    resources:
+      requests:
+        cpu: 10m
+        memory: 16Mi
+      limits:
+        memory: 64Mi

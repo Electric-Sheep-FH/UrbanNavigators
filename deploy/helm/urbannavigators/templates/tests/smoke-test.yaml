@@ -1,0 +1,30 @@
+# Smoke test lancé par "helm test" après chaque déploiement : la gateway doit voir tous les services "up".
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ .Release.Name }}-smoke-test
+  labels:
+    {{- include "un.labels" (dict "ctx" $ "name" "smoke-test") | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: smoke-test
+      image: curlimages/curl:8.11.1
+      command: ["sh", "-c"]
+      args:
+        - >-
+          curl -fsS --retry 10 --retry-connrefused --retry-delay 3
+          http://gateway-bff:{{ (include "un.config" (dict "ctx" $ "svc" (index .Values.services "gateway-bff")) | fromYaml).port }}/api/status
+          | tee /dev/stderr | grep -q '"status":"up"'
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: ["ALL"]

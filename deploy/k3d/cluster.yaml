@@ -1,0 +1,13 @@
+# Cluster Kubernetes local (k3s dans Docker), avec Traefik comme Ingress controller.
+#   k3d cluster create --config deploy/k3d/cluster.yaml
+# L'application est ensuite servie sur http://urbannavigators.localhost:8081
+apiVersion: k3d.io/v1alpha5
+kind: Simple
+metadata:
+  name: urbannavigators
+servers: 1
+agents: 1
+ports:
+  - port: 8081:80
+    nodeFilters:
+      - loadbalancer

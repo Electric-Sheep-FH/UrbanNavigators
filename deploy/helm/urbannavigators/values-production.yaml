@@ -1,0 +1,28 @@
+# Production : deux répliques minimum, autoscaling sur les services exposés au trafic voyageur.
+# image.registry, image.tag et ingress.host sont fournis par le workflow de release.
+imagePullSecrets:
+  - name: ghcr
+
+ingress:
+  tls:
+    enabled: true
+
+defaults:
+  replicas: 2
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 384Mi
+
+services:
+  gateway-bff:
+    autoscaling:
+      enabled: true
+  journey-planner:
+    autoscaling:
+      enabled: true
+  realtime:
+    autoscaling:
+      enabled: true
