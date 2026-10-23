@@ -17,3 +17,8 @@ updates:
     directory: /docker
     schedule:
       interval: weekly
+    ignore:
+      # Changer de version majeure de Node est une décision d'équipe (versions LTS paires uniquement),
+      # pas une mise à jour automatique : Dependabot proposait Node 25, qui n'est pas LTS.
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]

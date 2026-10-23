@@ -22,9 +22,12 @@ jobs:
   changes:
     name: Services impactés
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     outputs:
-      services: ${{ steps.affected.outputs.services }}
-      unchanged: ${{ steps.affected.outputs.unchanged }}
+      services: ${{ steps.registry.outputs.services || steps.affected.outputs.services }}
+      unchanged: ${{ steps.registry.outputs.unchanged || steps.affected.outputs.unchanged }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -33,6 +36,32 @@ jobs:
         run: node scripts/affected-services.mjs "$BASE"
         env:
           BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
+      - name: Connexion à GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Images jamais publiées
+        # Un service non modifié ne peut être re-taggé que si son image "main" existe déjà
+        # (premier push, ou build précédent en échec). Sinon, il est reconstruit.
+        id: registry
+        if: github.event_name == 'push'
+        run: |
+          for service in $(jq -r '.[]' <<< "$UNCHANGED"); do
+            if ! docker buildx imagetools inspect "ghcr.io/${OWNER,,}/un-$service:main" > /dev/null 2>&1; then
+              echo "::notice::un-$service:main absente du registre : image construite au lieu d'être re-taggée."
+              SERVICES=$(jq -c --arg s "$service" '. + [$s] | sort' <<< "$SERVICES")
+              UNCHANGED=$(jq -c --arg s "$service" 'map(select(. != $s))' <<< "$UNCHANGED")
+            fi
+          done
+          echo "services=$SERVICES" >> "$GITHUB_OUTPUT"
+          echo "unchanged=$UNCHANGED" >> "$GITHUB_OUTPUT"
+        env:
+          OWNER: ${{ github.repository_owner }}
+          SERVICES: ${{ steps.affected.outputs.services }}
+          UNCHANGED: ${{ steps.affected.outputs.unchanged }}
 
   quality:
     # Le monorepo reste petit : lint, tests et build complets à chaque exécution (< 2 min).
@@ -152,7 +181,7 @@ jobs:
           docker push "$IMAGE:$GITHUB_SHA"
           docker push "$IMAGE:main"
           echo "DIGEST_REF=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE:$GITHUB_SHA")" >> "$GITHUB_ENV"
-      - uses: sigstore/cosign-installer@v4
+      - uses: sigstore/cosign-installer@v4.1.2
         if: env.PUBLISH == 'true'
       - name: Signature de l'image (cosign)
         if: env.PUBLISH == 'true'
