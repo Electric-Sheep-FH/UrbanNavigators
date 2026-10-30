@@ -14,9 +14,9 @@
     "test": "jest"
   },
   "dependencies": {
-    "@nestjs/common": "^11.2.7",
-    "@nestjs/core": "^11.2.7",
-    "@nestjs/platform-express": "^11.2.7",
+    "@nestjs/common": "^12.3.2",
+    "@nestjs/core": "^12.3.2",
+    "@nestjs/platform-express": "^12.3.2",
     "@un/contracts": "workspace:*",
     "@un/observability": "workspace:*",
     "class-transformer": "^0.5.1",
@@ -25,7 +25,7 @@
     "rxjs": "^7.8.2"
   },
   "devDependencies": {
-    "@nestjs/testing": "^11.2.7"
+    "@nestjs/testing": "^12.3.2"
   },
   "jest": {
     "preset": "ts-jest",
